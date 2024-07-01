@@ -20,8 +20,12 @@ private:
     static std::vector<std::string> logLines;
 };
 
-struct EHExceptionRecord
-{
-    std::string Message;
-    std::string ToString() const;
-};
+/*
+//// Removed into EHExceptionRecord.h
+
+////struct EHExceptionRecord
+////{
+////    std::string Message;
+////    std::string ToString() const;
+////};
+*/
