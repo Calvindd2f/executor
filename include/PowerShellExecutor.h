@@ -27,8 +27,7 @@ public:
     void HandleInformation(String ^ logOutput);
     void BindEvents(PowerShell ^ ps, DefaultHost ^ host);
 
-    [return:MarshalAs(UnmanagedType::U1)] 
-    PowerShellExecutionResult *ExecutePowerShell(PowerShellExecutionResult *result, String ^ script, [MarshalAs(UnmanagedType::U1)] bool isInlinePowershell);
+    [return:MarshalAs(UnmanagedType::U1)] PowerShellExecutionResult *ExecutePowerShell(PowerShellExecutionResult *result, String ^ script, [MarshalAs(UnmanagedType::U1)] bool isInlinePowershell);
 
 private:
     IntPtr callbacks;
@@ -45,5 +44,4 @@ struct PowerShellExecutionResult
 {
     bool Success;
     char *Output;
-    // Add other fields as necessary
 };
