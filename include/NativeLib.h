@@ -23,7 +23,6 @@ extern "C"
 struct Callbacks
 {
     void (*LogCallback)(const char *message, int logType);
-    // Add other callback function pointers as needed
 };
 
 struct PowerShellExecutionResult

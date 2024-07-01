@@ -18,6 +18,15 @@ extern "C"
         callbacks->LogCallback(message, logType);
     }
 
+    /**
+     * Creates a new instance of the PowerShellExecutor class.
+     *
+     * @param callbacks A pointer to the Callbacks object.
+     *
+     * @return A pointer to the newly created PowerShellExecutor object.
+     *
+     * @throws std::runtime_error If the callbacks pointer is null.
+     */
     NATIVELIB_API void *CreatePowerShellExecutor(Callbacks *callbacks)
     {
         if (callbacks == nullptr)
