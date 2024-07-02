@@ -16,8 +16,7 @@ public:
 private:
     static void Log(const std::string &type, const std::string &shortDescription, const std::string &detailDescription = "");
     static std::string GetAgentInstallationDirectory();
-
-    static std::vector<std::string> logLines;
+    static List<String ^> ^ logLines = gcnew List<String ^>();
 };
 
 /*

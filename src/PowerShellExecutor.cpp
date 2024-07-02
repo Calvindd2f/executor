@@ -25,27 +25,63 @@ void PowerShellExecutor::SendLog(String ^ logOutput, LogOutputType logType)
 {
     if (activityLogCounter > activityLogThreshold)
     {
-        Callbacks *callbacksPtr = static_cast<Callbacks *>(callbacks.ToPointer());
+        auto callbacksPtr = static_cast<Callbacks *>(callbacks.ToPointer());
         std::string message = "ActivityLogthresholdexceeded";
         callbacksPtr->LogCallback(message.c_str(), static_cast<int>(LogOutputType::Error));
         throw gcnew Exception("Activity Log threshold exceeded.");
     }
 
-    Callbacks *callbacksPtr = static_cast<Callbacks *>(callbacks.ToPointer());
+    auto callbacksPtr = static_cast<Callbacks *>(callbacks.ToPointer());
     std::string utf8LogOutput = marshal_as<std::string>(logOutput);
     callbacksPtr->LogCallback(utf8LogOutput.c_str(), static_cast<int>(logType));
 
     activityLogCounter++;
 }
 
-void PowerShellExecutor::Debug_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
+void PowershellExecutor::Debug_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    // Implement debug data handling if needed
+    try
+    {
+        String ^ text = "";
+        int num = 0;
+        if (num < safe_cast<PSDataCollection<DebugRecord ^> ^>(sender)->Count)
+        {
+            do
+            {
+                DebugRecord ^ debugRecord = (*static_cast<PSDataCollection<DebugRecord ^> ^>(sender))[num];
+                text += debugRecord->Message;
+                num++;
+            } while (num < safe_cast<PSDataCollection<DebugRecord ^> ^>(sender)->Count);
+        }
+        this->SendLog(text, LogOutputType::Debug);
+    }
+    catch (Exception ^ ex)
+    {
+        LogManagedException(ex, "Debug_DataAdded");
+    }
 }
 
-void PowerShellExecutor::Progress_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
+void PowershellExecutor::Progress_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    // Implement progress data handling if needed
+    try
+    {
+        auto progressRecords = safe_cast<PSDataCollection<ProgressRecord ^> ^>(sender);
+        for (int i = 0; i < progressRecords->Count; i++)
+        {
+            auto progressRecord = progressRecords[i];
+            String ^ activity = progressRecord->Activity;
+            String ^ statusDescription = progressRecord->StatusDescription;
+            Int32 percentComplete = progressRecord->PercentComplete;
+
+            String ^ message = String::Format("Activity: {0}, StatusDescription: {1}, PercentComplete: {2}%",
+                                              activity, statusDescription, percentComplete);
+            this->SendLog(message, LogOutputType::Information);
+        }
+    }
+    catch (Exception ^ ex)
+    {
+        LogManagedException(ex, "Progress_DataAdded");
+    }
 }
 
 void PowerShellExecutor::Error_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
@@ -105,58 +141,122 @@ void PowerShellExecutor::Warning_DataAdded(Object ^ sender, DataAddedEventArgs ^
     SendLog(text, LogOutputType::Warning);
 }
 
-void PowerShellExecutor::Information_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
+void PowershellExecutor::Information_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    // Implement information data handling if needed
-}
-
-void PowerShellExecutor::OnOutputDataReceived(Object ^ sender, DataReceivedEventArgs ^ e)
-{
-    String ^ data = e->Data;
-    if (!String::IsNullOrEmpty(data))
+    try
     {
-        SendLog(data, LogOutputType::Information);
+        String ^ text = "";
+        int num = this->informationLinesProcessed;
+        if (num < ((PSDataCollection<InformationRecord ^> ^) sender)->Count)
+        {
+            do
+            {
+                InformationRecord ^ informationRecord = ((PSDataCollection<InformationRecord ^> ^) sender)[num];
+                text += informationRecord->MessageData;
+                this->informationLinesProcessed++;
+                num++;
+            } while (num < ((PSDataCollection<InformationRecord ^> ^) sender)->Count);
+        }
+        this->SendLog(text, LogOutputType::Information);
+    }
+    catch (Exception ^ ex)
+    {
+        LogManagedException(ex, "Information_DataAdded");
     }
 }
 
-void PowerShellExecutor::Host_OnInformation(String ^ information)
+void PowershellExecutor::OnOutputDataReceived(Object ^ sender, DataReceivedEventArgs ^ e)
 {
-    String ^ trimmedInfo = information->Trim();
-    if (!String::IsNullOrEmpty(trimmedInfo))
+    try
     {
-        SendLog(trimmedInfo, LogOutputType::Information);
+        String ^ data = e->Data;
+        if (data->Length > 0)
+        {
+            this->SendLog(data, LogOutputType::Information);
+        }
+        GC::KeepAlive(this);
+    }
+    catch (Exception ^ ex)
+    {
+        LogManagedException(ex, "OnOutputDataReceived");
     }
 }
 
-void PowerShellExecutor::HandleInformation(String ^ logOutput)
+void PowershellExecutor::Host_OnInformation(String ^ information)
 {
-    if (!String::IsNullOrEmpty(logOutput))
+    try
     {
-        SendLog(logOutput, LogOutputType::Information);
+        String ^ text = information->Trim();
+        if (text->Length > 0)
+        {
+            this->SendLog(text, LogOutputType::Information);
+        }
+        GC::KeepAlive(this);
+    }
+    catch (Exception ^ ex)
+    {
+        LogManagedException(ex, "Host_OnInformation");
     }
 }
 
-void PowerShellExecutor::BindEvents(PowerShell ^ ps, DefaultHost ^ host)
+void PowershellExecutor::HandleInformation(String ^ logOutput)
 {
-    ps->Streams->Debug->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Debug_DataAdded);
-    ps->Streams->Error->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Error_DataAdded);
-    ps->Streams->Progress->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Progress_DataAdded);
-    ps->Streams->Verbose->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Verbose_DataAdded);
-    ps->Streams->Warning->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Warning_DataAdded);
-
-    Type ^ psType = ps->GetType();
-    PropertyInfo ^ informationProperty = psType->GetProperty("Information");
-    if (informationProperty != nullptr)
+    try
     {
-        Object ^ informationObject = informationProperty->GetValue(ps->Streams, nullptr);
-        EventInfo ^ dataAddedEvent = informationObject->GetType()->GetEvent("DataAdded");
-        MethodInfo ^ informationMethod = this->GetType()->GetMethod("Information_DataAdded");
-        Delegate ^ handler = Delegate::CreateDelegate(dataAddedEvent->EventHandlerType, this, informationMethod);
-        dataAddedEvent->AddEventHandler(informationObject, handler);
+        if (logOutput->Length > 0)
+        {
+            this->SendLog(logOutput, LogOutputType::Information);
+        }
     }
-    else
+    catch (Exception ^ ex)
     {
-        host->OnInformation += gcnew Action<String ^>(this, &PowerShellExecutor::Host_OnInformation);
+        LogManagedException(ex, "HandleInformation");
+    }
+}
+
+void PowershellExecutor::BindEvents(PowerShell ^ _ps, DefaultHost ^ host)
+{
+    try
+    {
+        PSDataCollection<DebugRecord ^> ^ debug = _ps->Streams->Debug;
+        EventHandler<DataAddedEventArgs ^> ^ eventHandler = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Debug_DataAdded);
+        debug->DataAdded += eventHandler;
+
+        PSDataCollection<ErrorRecord ^> ^ error = _ps->Streams->Error;
+        EventHandler<DataAddedEventArgs ^> ^ eventHandler2 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Error_DataAdded);
+        error->DataAdded += eventHandler2;
+
+        PSDataCollection<ProgressRecord ^> ^ progress = _ps->Streams->Progress;
+        EventHandler<DataAddedEventArgs ^> ^ eventHandler3 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Progress_DataAdded);
+        progress->DataAdded += eventHandler3;
+
+        PropertyInfo ^ property = _ps->GetType()->GetProperty("Information");
+        if (property != nullptr)
+        {
+            Object ^ value = property->GetValue(_ps->Streams, nullptr);
+            EventInfo ^ eventInfo = value->GetType()->GetEvent("DataAdded");
+            MethodInfo ^ methodInfo = this->GetType()->GetMethod("Information_DataAdded", BindingFlags::Instance | BindingFlags::NonPublic);
+            Delegate ^ delegateInfo = Delegate::CreateDelegate(eventInfo->EventHandlerType, this, methodInfo);
+            eventInfo->AddEventHandler(value, delegateInfo);
+        }
+        else
+        {
+            host->OnInformation += gcnew Action<String ^>(this, &PowershellExecutor::Host_OnInformation);
+        }
+
+        PSDataCollection<VerboseRecord ^> ^ verbose = _ps->Streams->Verbose;
+        EventHandler<DataAddedEventArgs ^> ^ eventHandler4 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Verbose_DataAdded);
+        verbose->DataAdded += eventHandler4;
+
+        PSDataCollection<WarningRecord ^> ^ warning = _ps->Streams->Warning;
+        EventHandler<DataAddedEventArgs ^> ^ eventHandler5 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Warning_DataAdded);
+        warning->DataAdded += eventHandler5;
+
+        GC::KeepAlive(this);
+    }
+    catch (Exception ^ ex)
+    {
+        LogManagedException(ex, "BindEvents");
     }
 }
 
@@ -288,7 +388,7 @@ PowerShellExecutionResult *PowerShellExecutor::ExecutePowerShell(PowerShellExecu
 // Implement DeserializeScriptVariables method
 String ^ PowerShellExecutor::DeserializeScriptVariables(String ^ script)
 {
-    // Implement your deserialization logic here
+    // TODO: Implement your deserialization logic here
     // This is a placeholder implementation
     return script;
 }

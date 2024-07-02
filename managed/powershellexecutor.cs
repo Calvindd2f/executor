@@ -165,7 +165,7 @@ internal class PowershellExecutor
 
     public PowerShellExecutionResult ExecutePowerShell(string script, bool isInlinePowershell)
     {
-        // Implementation of ExecutePowerShell method
+        // TODO: Implementation of ExecutePowerShell method
         // This would involve creating a PowerShell instance, setting up the runspace,
         // executing the script, and handling the results.
         // The actual implementation would be quite extensive and would need to mirror
