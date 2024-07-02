@@ -7,62 +7,91 @@ using namespace System::Environment;
 
 void LogUtil::LogInfo(String ^ shortMessage, String ^ detailDescription)
 {
-    Log("Informational", shortMessage, detailDescription);
+    Log(LogLevel::Information, shortMessage, detailDescription);
 }
 
 void LogUtil::LogError(String ^ shortMessage, String ^ detailDescription)
 {
-    Log("Error", shortMessage, detailDescription);
+    Log(LogLevel::Error, shortMessage, detailDescription);
 }
 
 void LogUtil::LogWarning(String ^ shortMessage, String ^ detailDescription)
 {
-    Log("Warning", shortMessage, detailDescription);
+    Log(LogLevel::Warning, shortMessage, detailDescription);
 }
 
-void LogUtil::Log(String ^ type, String ^ shortDescription, String ^ detailDescription)
+void LogUtil::LogDebug(String ^ shortMessage, String ^ detailDescription)
 {
-    String ^ text = DateTime::Now.ToString("ddd MMM  d H:mm:ss yyyy:") + "\t" + type + "\t";
-    if (type == "Error")
+    Log(LogLevel::Debug, shortMessage, detailDescription);
+}
+
+void LogUtil::LogVerbose(String ^ shortMessage, String ^ detailDescription)
+{
+    Log(LogLevel::Verbose, shortMessage, detailDescription);
+}
+
+void LogUtil::Log(LogLevel level, String ^ shortDescription, String ^ detailDescription)
+{
+    String ^ levelString = level.ToString();
+    String ^ text = String::Format("{0}\t{1}\t", DateTime::Now.ToString("ddd MMM  d H:mm:ss yyyy:"), levelString);
+
+    if (level == LogLevel::Error)
     {
         text += "\t";
     }
-    String ^ text2 = text + shortDescription;
+
+    String ^ logMessage = text + shortDescription;
+
     if (!String::IsNullOrEmpty(detailDescription))
     {
-        text2 += " For more information please see log file";
+        logMessage += " For more information please see log file";
     }
-    Console::WriteLine(text2);
+
+    Console::WriteLine(logMessage);
+
     if (!String::IsNullOrEmpty(detailDescription))
     {
-        text2 = text + detailDescription;
-        if (type != "Error")
+        logMessage = text + detailDescription;
+        if (level != LogLevel::Error)
         {
-            text2 = text + shortDescription + "\r\n";
-            text2 = text2 + "Detail description: " + detailDescription + "\r\n";
+            logMessage = text + shortDescription + "\r\n";
+            logMessage += text + "Detail description: " + detailDescription + "\r\n";
         }
     }
-    logLines->Add(text2);
+
+    logLines->Add(logMessage);
+
+    if (logLines->Count >= maxLogLines)
+    {
+        WriteLogsToFile();
+    }
+}
+
+void LogUtil::FlushLogs()
+{
+    WriteLogsToFile();
+}
+
+void LogUtil::WriteLogsToFile()
+{
     String ^ agentInstallationDirectory = GetAgentInstallationDirectory();
     try
     {
         if (Directory::Exists(agentInstallationDirectory))
         {
-            File::AppendAllLines(Path::Combine(agentInstallationDirectory, "LogFile_Installer.txt"), logLines);
+            String ^ logFilePath = Path::Combine(agentInstallationDirectory, logFileName);
+            File::AppendAllLines(logFilePath, logLines);
             logLines->Clear();
         }
     }
-    catch (DirectoryNotFoundException ^)
+    catch (Exception ^ ex)
     {
-    }
-    catch (UnauthorizedAccessException ^)
-    {
+        Console::WriteLine("Error writing to log file: " + ex->Message);
     }
 }
 
 String ^ LogUtil::GetAgentInstallationDirectory()
 {
-    String ^ folderPath = Environment::GetFolderPath(Environment::SpecialFolder::ProgramFiles);
-    String ^ text = Path::Combine(folderPath, "OrchestratorAgent");
-    return Path::Combine(folderPath, text);
+    String ^ folderPath = Environment::GetFolderPath(Environment::SpecialFolder::CommonApplicationData);
+    return Path::Combine(folderPath, "OrchestratorAgent", "Logs");
 }

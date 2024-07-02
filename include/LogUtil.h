@@ -1,30 +1,38 @@
 #pragma once
 
+using namespace System;
+using namespace System::Collections::Generic;
+
 #include <string>
 #include <vector>
 
-class LogUtil
+public
+enum class LogLevel
 {
-public:
-    static void LogInfo(const std::string &shortMessage, const std::string &detailDescription = "");
-    static void LogError(const std::string &shortMessage, const std::string &detailDescription = "");
-    static void LogError(const EHExceptionRecord &exceptionRecord);
-    static void LogWarning(const std::string &shortMessage, const std::string &detailDescription = "");
-    static void LogDebug(const std::string &shortMessage, const std::string &detailDescription = "");
-    static void LogVerbose(const std::string &shortMessage, const std::string &detailDescription = "");
-
-private:
-    static void Log(const std::string &type, const std::string &shortDescription, const std::string &detailDescription = "");
-    static std::string GetAgentInstallationDirectory();
-    static List<String ^> ^ logLines = gcnew List<String ^>();
+    Debug,
+    Verbose,
+    Information,
+    Warning,
+    Error
 };
 
-/*
-//// Removed into EHExceptionRecord.h
+public
+ref class LogUtil
+{
+public:
+    static void LogInfo(String ^ shortMessage, String ^ detailDescription);
+    static void LogError(String ^ shortMessage, String ^ detailDescription);
+    static void LogWarning(String ^ shortMessage, String ^ detailDescription);
+    static void LogDebug(String ^ shortMessage, String ^ detailDescription);
+    static void LogVerbose(String ^ shortMessage, String ^ detailDescription);
+    static void FlushLogs();
 
-////struct EHExceptionRecord
-////{
-////    std::string Message;
-////    std::string ToString() const;
-////};
-*/
+private:
+    static void Log(LogLevel level, String ^ shortDescription, String ^ detailDescription);
+    static String ^ GetAgentInstallationDirectory();
+    static void WriteLogsToFile();
+
+    static List<String ^> ^ logLines = gcnew List<String ^>();
+    static String ^ logFileName = "LogFile_Installer.txt";
+    static int maxLogLines = 1000; // Adjust as needed
+};
