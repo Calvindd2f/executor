@@ -25,14 +25,33 @@ internal class PowershellExecutor
 
     public void SendLog(string logOutput, LogOutputType logType)
     {
-        if (ActivityLogCounter > ActivityLogThreshold)
+        if (string.IsNullOrEmpty(logOutput))
         {
-            throw new Exception("Activity Log threshold exceeded.");
+            throw new ArgumentException("Log output cannot be null or empty.", nameof(logOutput));
         }
-        string utf8LogOutput = StringUtil.ConvertWstringToUtf8String(logOutput);
-        // Call the native log function using P/Invoke
-        NativeMethods.SendLog(callbacks, utf8LogOutput, (int)logType);
-        ActivityLogCounter++;
+
+        try
+        {
+            if (ActivityLogCounter > ActivityLogThreshold)
+            {
+                throw new Exception("Activity Log threshold exceeded.");
+            }
+
+            string utf8LogOutput = StringUtil.ConvertWstringToUtf8String(logOutput);
+
+            if (callbacks == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("Callbacks pointer is not initialized.");
+            }
+
+            NativeMethods.SendLog(callbacks, utf8LogOutput, (int)logType);
+            ActivityLogCounter++;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error occurred while sending log: {ex}");
+            throw;
+        }
     }
 
     public void Debug_DataAdded(object sender, DataAddedEventArgs e)
@@ -142,35 +161,103 @@ internal class PowershellExecutor
 
     public void BindEvents(PowerShell ps, DefaultHost host)
     {
-        ps.Streams.Debug.DataAdded += Debug_DataAdded;
-        ps.Streams.Error.DataAdded += Error_DataAdded;
-        ps.Streams.Progress.DataAdded += Progress_DataAdded;
-        ps.Streams.Verbose.DataAdded += Verbose_DataAdded;
-        ps.Streams.Warning.DataAdded += Warning_DataAdded;
+        ps.Streams.Debug.DataAdded += new EventHandler<DataAddedEventArgs>(this.Debug_DataAdded);
+        ps.Streams.Error.DataAdded += new EventHandler<DataAddedEventArgs>(this.Error_DataAdded);
+        ps.Streams.Progress.DataAdded += new EventHandler<DataAddedEventArgs>(this.Progress_DataAdded);
+        ps.Streams.Verbose.DataAdded += new EventHandler<DataAddedEventArgs>(this.Verbose_DataAdded);
+        ps.Streams.Warning.DataAdded += new EventHandler<DataAddedEventArgs>(this.Warning_DataAdded);
 
-        PropertyInfo informationProperty = ps.GetType().GetProperty("Information");
-        if (informationProperty != null)
+        PropertyInfo property = ps.GetType().GetProperty("Information");
+        if (property != null)
         {
-            object informationObject = informationProperty.GetValue(ps.Streams);
-            EventInfo dataAddedEvent = informationObject.GetType().GetEvent("DataAdded");
-            MethodInfo informationMethod = GetType().GetMethod("Information_DataAdded", BindingFlags.Instance | BindingFlags.NonPublic);
-            Delegate handler = Delegate.CreateDelegate(dataAddedEvent.EventHandlerType, this, informationMethod);
-            dataAddedEvent.AddEventHandler(informationObject, handler);
+            object value = property.GetValue(ps.Streams, null);
+            EventInfo eventInfo = value.GetType().GetEvent("DataAdded");
+            MethodInfo methodInfo = this.GetType().GetMethod("Information_DataAdded", BindingFlags.Instance | BindingFlags.NonPublic);
+            Delegate delegateInfo = Delegate.CreateDelegate(eventInfo.EventHandlerType, this, methodInfo);
+            eventInfo.AddEventHandler(value, delegateInfo);
         }
         else
         {
-            host.OnInformation += Host_OnInformation;
+            host.OnInformation += this.Host_OnInformation;
         }
+
+        GC.KeepAlive(this);
     }
 
-    public PowerShellExecutionResult ExecutePowerShell(string script, bool isInlinePowershell)
+    public unsafe PowerShellExecutionResult* ExecutePowerShell(PowerShellExecutionResult* result, string script, bool isInlinePowershell)
     {
-        // TODO: Implementation of ExecutePowerShell method
-        // This would involve creating a PowerShell instance, setting up the runspace,
-        // executing the script, and handling the results.
-        // The actual implementation would be quite extensive and would need to mirror
-        // the functionality in the C++/CLR version.
+        PowerShellExecutionResult powerShellExecutionResult = new PowerShellExecutionResult();
 
-        throw new NotImplementedException("ExecutePowerShell needs to be implemented");
+        using (Runspace runspace = RunspaceFactory.CreateRunspace(new DefaultHost(CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture)))
+        {
+            runspace.Open();
+            using (PowerShell powerShell = PowerShell.Create())
+            {
+                powerShell.Runspace = runspace;
+
+                // Load the DLL and define custom commands
+                string initScript = @"
+                Add-Type -Path 'PowerShellRuntimeExtensions20.dll';
+                function ConvertFrom-Json20([object] $inputObject) {
+                    $err = $null;
+                    return [PowerShellRuntimeExtensions.JsonObject]::ConvertFromJson($inputObject, $false, 4, [ref]$err);
+                }
+                function ConvertTo-Json20([object] $inputObject, $depth = 5) {
+                    $ctx = New-Object PowerShellRuntimeExtensions.ConvertToJsonContext $depth, $false, $false, 'Default';
+                    return [PowerShellRuntimeExtensions.JsonObject]::ConvertToJson($inputObject, [ref]$ctx);
+                }
+                if ($null -eq (Get-Command 'ConvertTo-Json' -ErrorAction SilentlyContinue)) { 
+                    New-Alias -Name 'ConvertTo-JSON' -Value 'ConvertTo-Json20' -Scope Global -Force; 
+                }
+                if ($null -eq (Get-Command 'ConvertFrom-Json' -ErrorAction SilentlyContinue)) { 
+                    New-Alias -Name 'ConvertFrom-JSON' -Value 'ConvertFrom-Json20' -Scope Global -Force; 
+                }";
+
+                powerShell.AddScript(initScript).Invoke();
+
+                this.BindEvents(powerShell, (DefaultHost)runspace.InitialSessionState.Host);
+
+                if (isInlinePowershell)
+                {
+                    powerShell.AddScript(script, true);
+                }
+                else
+                {
+                    powerShell.AddCommand(script);
+                }
+
+                PSInvocationSettings psInvocationSettings = new PSInvocationSettings()
+                {
+                    Host = (DefaultHost)runspace.InitialSessionState.Host
+                };
+
+                using (PSDataCollection<object> outputCollection = new PSDataCollection<object>())
+                {
+                    powerShell.Invoke(null, outputCollection, psInvocationSettings);
+
+                    if (outputCollection.Count == 0)
+                    {
+                        throw new Exception("Activity did not return a result and/or failed while executing");
+                    }
+                    if (outputCollection.Count > 1)
+                    {
+                        throw new Exception("Activity returned more than one result. See below for details");
+                    }
+
+                    PSObject psObject = outputCollection[0];
+                    string resultString = psObject.ToString();
+
+                    string utf8Result = Encoding.UTF8.GetString(Encoding.Default.GetBytes(resultString));
+                    *result = new PowerShellExecutionResult() { Result = utf8Result, Status = 0 };
+                }
+            }
+        }
+
+        return result;
     }
+
+    public int verboseLinesProcessed = 0;
+    public int warningLinesProcessed = 0;
+    public int errorLinesProcessed = 0;
+    public int informationLinesProcessed = 0;
 }
