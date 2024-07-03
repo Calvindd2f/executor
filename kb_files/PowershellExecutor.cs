@@ -1,4 +1,3 @@
-// For the final C# when the CLR/C++ is ready.
 using System;
 using System.Diagnostics;
 using System.Globalization;
@@ -9,15 +8,15 @@ using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-internal class PowershellExecutor //c++/clr
+internal class PowershellExecutor 
 {
-	public unsafe PowershellExecutor(Callbacks* callbacks) //unsafe is used as C++/CLR is called
+	public unsafe PowershellExecutor(Callbacks* callbacks)
 	{
 		this.activityLogCounter = 0;
 		this.callbacks = callbacks;
 	}
 
-	public unsafe void SendLog(string logOutput, LogOutputType logtype)  //unsafe is used as C++/CLR is called
+	public unsafe void SendLog(string logOutput, LogOutputType logtype)
 	{
 		if (this.activityLogCounter > this.activityLogThreshold)
 		{
@@ -36,9 +35,8 @@ internal class PowershellExecutor //c++/clr
 	{
 	}
 
-	public unsafe void Error_DataAdded(object sender, DataAddedEventArgs e)  // unsafe as this uses the EHException.h/.cpp files for detailed stack trace
+	public unsafe void Error_DataAdded(object sender, DataAddedEventArgs e)
 	{
-		// after exception marshals string of exception and uses send log SendLog 
 	}
 
 	public void Verbose_DataAdded(object sender, DataAddedEventArgs e) 
@@ -122,11 +120,78 @@ internal class PowershellExecutor //c++/clr
 	}
 
 	
-	public unsafe PowerShellExecutionResult* ExecutePowerShell(PowerShellExecutionResult* A_1, * script, [MarshalAs(UnmanagedType.U1)] bool isInlinePowershell)  //unsafe is used as C++/CLR is called
-	{
+	public unsafe PowerShellExecutionResult* ExecutePowerShell(PowerShellExecutionResult* result, string script, bool isInlinePowershell)
+    	{
+        	PowerShellExecutionResult powerShellExecutionResult = new PowerShellExecutionResult();
+
+        	using (Runspace runspace = RunspaceFactory.CreateRunspace(new DefaultHost(CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture)))
+        	{
+            		runspace.Open();
+            		using (PowerShell powerShell = PowerShell.Create())
+            		{
+                		powerShell.Runspace = runspace;
+
+                		// Load the DLL and define custom commands
+                		string initScript = @"
+                		Add-Type -Path 'PowerShellRuntimeExtensions20.dll';
+                		function ConvertFrom-Json20([object] $inputObject) {
+                   			$err = $null;
+                    			return [PowerShellRuntimeExtensions.JsonObject]::ConvertFromJson($inputObject, $false, 4, [ref]$err);
+                		}
+                		function ConvertTo-Json20([object] $inputObject, $depth = 5) {
+                    			$ctx = New-Object PowerShellRuntimeExtensions.ConvertToJsonContext $depth, $false, $false, 'Default';
+                    			return [PowerShellRuntimeExtensions.JsonObject]::ConvertToJson($inputObject, [ref]$ctx);
+                		}
+                		if ($null -eq (Get-Command 'ConvertTo-Json' -ErrorAction SilentlyContinue)) { 
+                    			New-Alias -Name 'ConvertTo-JSON' -Value 'ConvertTo-Json20' -Scope Global -Force; 
+               	 		}
+                		if ($null -eq (Get-Command 'ConvertFrom-Json' -ErrorAction SilentlyContinue)) { 
+                    			New-Alias -Name 'ConvertFrom-JSON' -Value 'ConvertFrom-Json20' -Scope Global -Force; 
+	                	}";
+
+                		powerShell.AddScript(initScript).Invoke();
+
+                		this.BindEvents(powerShell, (DefaultHost)runspace.InitialSessionState.Host);
+
+		                if (isInlinePowershell)
+		                {
+		                    powerShell.AddScript(script, true);
+		                }
+		                else
+		                {
+		                    powerShell.AddCommand(script);
+		                }
+
+		                PSInvocationSettings psInvocationSettings = new PSInvocationSettings()
+		                {
+		                    Host = (DefaultHost)runspace.InitialSessionState.Host
+		                };
+
+		                using (PSDataCollection<object> outputCollection = new PSDataCollection<object>())
+		                {
+		                    powerShell.Invoke(null, outputCollection, psInvocationSettings);
+		
+		                    if (outputCollection.Count == 0)
+		                    {
+		                        throw new Exception("Activity did not return a result and/or failed while executing");
+		                    }
+		                    if (outputCollection.Count > 1)
+		                    {
+		                        throw new Exception("Activity returned more than one result. See below for details");
+		                    }
+		
+		                    PSObject psObject = outputCollection[0];
+		                    string resultString = psObject.ToString();
+		
+		                    string utf8Result = Encoding.UTF8.GetString(Encoding.Default.GetBytes(resultString));
+		                    *result = new PowerShellExecutionResult() { Result = utf8Result, Status = 0 };
+		                }
+            		}
+        	}
+	return result;
 	}
 
-	private unsafe Callbacks* callbacks = null; // C++/C:R DLL
+	private unsafe Callbacks* callbacks = null;
 
 	public int verboseLinesProcessed = 0;
 
