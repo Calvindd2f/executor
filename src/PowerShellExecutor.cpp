@@ -1,104 +1,60 @@
 #include "PowerShellExecutor.h"
-#include "ProcessUtil.h"
-#include "SettingsService.h"
-#include "LogUtil.h"
-#include "StringUtil.h"
+#include <msclr/marshal_cppstd.h>
 
-using namespace msclr::interop;
 using namespace System::Globalization;
 using namespace System::IO;
-
-// Assuming this is the structure of your Callbacks class
-struct Callbacks
-{
-    void (*LogCallback)(const char *, int);
-};
+using namespace msclr::interop;
 
 PowerShellExecutor::PowerShellExecutor(IntPtr callbacks)
-    : callbacks(callbacks), verboseLinesProcessed(0), warningLinesProcessed(0),
-      errorLinesProcessed(0), informationLinesProcessed(0), activityLogCounter(0),
-      activityLogThreshold(1000)
+    : callbacksPtr(callbacks), activityLogCounter(0), verboseLinesProcessed(0),
+      warningLinesProcessed(0), errorLinesProcessed(0), informationLinesProcessed(0)
 {
 }
 
 void PowerShellExecutor::SendLog(String ^ logOutput, LogOutputType logType)
 {
-    if (activityLogCounter > activityLogThreshold)
+    if (activityLogCounter > ActivityLogThreshold)
     {
-        auto callbacksPtr = static_cast<Callbacks *>(callbacks.ToPointer());
-        std::string message = "ActivityLogthresholdexceeded";
-        callbacksPtr->LogCallback(message.c_str(), static_cast<int>(LogOutputType::Error));
         throw gcnew Exception("Activity Log threshold exceeded.");
     }
 
-    auto callbacksPtr = static_cast<Callbacks *>(callbacks.ToPointer());
+    auto callbacksNative = static_cast<Callbacks *>(callbacksPtr.ToPointer());
     std::string utf8LogOutput = marshal_as<std::string>(logOutput);
-    callbacksPtr->LogCallback(utf8LogOutput.c_str(), static_cast<int>(logType));
+    callbacksNative->LogCallback(utf8LogOutput.c_str(), static_cast<int>(logType));
 
     activityLogCounter++;
 }
 
-void PowershellExecutor::Debug_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
+void PowerShellExecutor::Debug_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    try
-    {
-        String ^ text = "";
-        int num = 0;
-        if (num < safe_cast<PSDataCollection<DebugRecord ^> ^>(sender)->Count)
-        {
-            do
-            {
-                DebugRecord ^ debugRecord = (*static_cast<PSDataCollection<DebugRecord ^> ^>(sender))[num];
-                text += debugRecord->Message;
-                num++;
-            } while (num < safe_cast<PSDataCollection<DebugRecord ^> ^>(sender)->Count);
-        }
-        this->SendLog(text, LogOutputType::Debug);
-    }
-    catch (Exception ^ ex)
-    {
-        LogManagedException(ex, "Debug_DataAdded");
-    }
+    auto debugRecords = safe_cast<PSDataCollection<DebugRecord ^> ^>(sender);
+    String ^ text = String::Join(Environment::NewLine, debugRecords);
+    SendLog(text, LogOutputType::Debug);
 }
 
-void PowershellExecutor::Progress_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
+void PowerShellExecutor::Progress_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    try
+    auto progressRecords = safe_cast<PSDataCollection<ProgressRecord ^> ^>(sender);
+    for each (ProgressRecord ^ record in progressRecords)
     {
-        auto progressRecords = safe_cast<PSDataCollection<ProgressRecord ^> ^>(sender);
-        for (int i = 0; i < progressRecords->Count; i++)
-        {
-            auto progressRecord = progressRecords[i];
-            String ^ activity = progressRecord->Activity;
-            String ^ statusDescription = progressRecord->StatusDescription;
-            Int32 percentComplete = progressRecord->PercentComplete;
-
-            String ^ message = String::Format("Activity: {0}, StatusDescription: {1}, PercentComplete: {2}%",
-                                              activity, statusDescription, percentComplete);
-            this->SendLog(message, LogOutputType::Information);
-        }
-    }
-    catch (Exception ^ ex)
-    {
-        LogManagedException(ex, "Progress_DataAdded");
+        String ^ message = String::Format("Activity: {0}, Status: {1}, Progress: {2}%",
+                                          record->Activity, record->StatusDescription, record->PercentComplete);
+        SendLog(message, LogOutputType::Information);
     }
 }
 
 void PowerShellExecutor::Error_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    PSDataCollection<ErrorRecord ^> ^ errorRecords = safe_cast<PSDataCollection<ErrorRecord ^> ^>(sender);
-    for (int i = 0; i < errorRecords->Count; i++)
+    auto errorRecords = safe_cast<PSDataCollection<ErrorRecord ^> ^>(sender);
+    for each (ErrorRecord ^ errorRecord in errorRecords)
     {
-        ErrorRecord ^ errorRecord = errorRecords[i];
-        String ^ errorMessage = errorRecord->ToString();
-        SendLog(errorMessage, LogOutputType::Error);
+        SendLog(errorRecord->ToString(), LogOutputType::Error);
 
         if (errorRecord->Exception != nullptr)
         {
-            String ^ exceptionMessage = errorRecord->Exception->ToString();
-            SendLog(exceptionMessage, LogOutputType::Error);
+            SendLog(errorRecord->Exception->ToString(), LogOutputType::Error);
 
-            WebException ^ webEx = dynamic_cast<WebException ^>(errorRecord->Exception->InnerException);
+            auto webEx = dynamic_cast<System::Net::WebException ^>(errorRecord->Exception->InnerException);
             if (webEx != nullptr)
             {
                 try
@@ -117,278 +73,164 @@ void PowerShellExecutor::Error_DataAdded(Object ^ sender, DataAddedEventArgs ^ e
 
 void PowerShellExecutor::Verbose_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    PSDataCollection<VerboseRecord ^> ^ verboseRecords = safe_cast<PSDataCollection<VerboseRecord ^> ^>(sender);
-    String ^ text = "";
-    for (int i = verboseLinesProcessed; i < verboseRecords->Count; i++)
-    {
-        VerboseRecord ^ verboseRecord = verboseRecords[i];
-        text += verboseRecord->Message;
-        verboseLinesProcessed++;
-    }
+    auto verboseRecords = safe_cast<PSDataCollection<VerboseRecord ^> ^>(sender);
+    String ^ text = String::Join(Environment::NewLine, verboseRecords);
     SendLog(text, LogOutputType::Verbose);
+    verboseLinesProcessed += verboseRecords->Count;
 }
 
 void PowerShellExecutor::Warning_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    PSDataCollection<WarningRecord ^> ^ warningRecords = safe_cast<PSDataCollection<WarningRecord ^> ^>(sender);
-    String ^ text = "";
-    for (int i = warningLinesProcessed; i < warningRecords->Count; i++)
-    {
-        WarningRecord ^ warningRecord = warningRecords[i];
-        text += warningRecord->Message;
-        warningLinesProcessed++;
-    }
+    auto warningRecords = safe_cast<PSDataCollection<WarningRecord ^> ^>(sender);
+    String ^ text = String::Join(Environment::NewLine, warningRecords);
     SendLog(text, LogOutputType::Warning);
+    warningLinesProcessed += warningRecords->Count;
 }
 
-void PowershellExecutor::Information_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
+void PowerShellExecutor::Information_DataAdded(Object ^ sender, DataAddedEventArgs ^ e)
 {
-    try
+    auto informationRecords = safe_cast<PSDataCollection<InformationRecord ^> ^>(sender);
+    String ^ text = String::Join(Environment::NewLine, informationRecords);
+    SendLog(text, LogOutputType::Information);
+    informationLinesProcessed += informationRecords->Count;
+}
+
+void PowerShellExecutor::OnOutputDataReceived(Object ^ sender, DataReceivedEventArgs ^ e)
+{
+    if (!String::IsNullOrEmpty(e->Data))
     {
-        String ^ text = "";
-        int num = this->informationLinesProcessed;
-        if (num < ((PSDataCollection<InformationRecord ^> ^) sender)->Count)
-        {
-            do
-            {
-                InformationRecord ^ informationRecord = ((PSDataCollection<InformationRecord ^> ^) sender)[num];
-                text += informationRecord->MessageData;
-                this->informationLinesProcessed++;
-                num++;
-            } while (num < ((PSDataCollection<InformationRecord ^> ^) sender)->Count);
-        }
-        this->SendLog(text, LogOutputType::Information);
-    }
-    catch (Exception ^ ex)
-    {
-        LogManagedException(ex, "Information_DataAdded");
+        SendLog(e->Data, LogOutputType::Information);
     }
 }
 
-void PowershellExecutor::OnOutputDataReceived(Object ^ sender, DataReceivedEventArgs ^ e)
+void PowerShellExecutor::Host_OnInformation(String ^ information)
 {
-    try
+    String ^ text = information->Trim();
+    if (!String::IsNullOrEmpty(text))
     {
-        String ^ data = e->Data;
-        if (data->Length > 0)
-        {
-            this->SendLog(data, LogOutputType::Information);
-        }
-        GC::KeepAlive(this);
-    }
-    catch (Exception ^ ex)
-    {
-        LogManagedException(ex, "OnOutputDataReceived");
+        SendLog(text, LogOutputType::Information);
     }
 }
 
-void PowershellExecutor::Host_OnInformation(String ^ information)
+void PowerShellExecutor::HandleInformation(String ^ logOutput)
 {
-    try
+    if (!String::IsNullOrEmpty(logOutput))
     {
-        String ^ text = information->Trim();
-        if (text->Length > 0)
-        {
-            this->SendLog(text, LogOutputType::Information);
-        }
-        GC::KeepAlive(this);
-    }
-    catch (Exception ^ ex)
-    {
-        LogManagedException(ex, "Host_OnInformation");
+        SendLog(logOutput, LogOutputType::Information);
     }
 }
 
-void PowershellExecutor::HandleInformation(String ^ logOutput)
+void PowerShellExecutor::BindEvents(PowerShell ^ ps, PSHost ^ host)
 {
-    try
+    ps->Streams->Debug->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Debug_DataAdded);
+    ps->Streams->Error->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Error_DataAdded);
+    ps->Streams->Progress->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Progress_DataAdded);
+    ps->Streams->Verbose->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Verbose_DataAdded);
+    ps->Streams->Warning->DataAdded += gcnew EventHandler<DataAddedEventArgs ^>(this, &PowerShellExecutor::Warning_DataAdded);
+
+    auto informationProperty = ps->GetType()->GetProperty("Information");
+    if (informationProperty != nullptr)
     {
-        if (logOutput->Length > 0)
+        Object ^ informationObject = informationProperty->GetValue(ps->Streams, nullptr);
+        EventInfo ^ dataAddedEvent = informationObject->GetType()->GetEvent("DataAdded");
+        MethodInfo ^ informationMethod = this->GetType()->GetMethod("Information_DataAdded", System::Reflection::BindingFlags::Instance | System::Reflection::BindingFlags::NonPublic);
+        Delegate ^ handler = Delegate::CreateDelegate(dataAddedEvent->EventHandlerType, this, informationMethod);
+        dataAddedEvent->AddEventHandler(informationObject, handler);
+    }
+    else
+    {
+        auto defaultHost = dynamic_cast<DefaultHost ^>(host);
+        if (defaultHost != nullptr)
         {
-            this->SendLog(logOutput, LogOutputType::Information);
+            defaultHost->OnInformation += gcnew Action<String ^>(this, &PowerShellExecutor::Host_OnInformation);
         }
     }
-    catch (Exception ^ ex)
-    {
-        LogManagedException(ex, "HandleInformation");
-    }
 }
 
-void PowershellExecutor::BindEvents(PowerShell ^ _ps, DefaultHost ^ host)
+String ^ PowerShellExecutor::DeserializeScriptVariables(String ^ script)
 {
+    // TODO: Implement deserialization logic
+    // This is a placeholder implementation
+    return script;
+}
+
+PowerShellExecutionResult ^ PowerShellExecutor::ExecutePowerShell(String ^ script, bool isInlinePowershell)
+{
+    auto result = gcnew PowerShellExecutionResult();
+
     try
     {
-        PSDataCollection<DebugRecord ^> ^ debug = _ps->Streams->Debug;
-        EventHandler<DataAddedEventArgs ^> ^ eventHandler = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Debug_DataAdded);
-        debug->DataAdded += eventHandler;
+        auto runspace = RunspaceFactory::CreateRunspace(gcnew DefaultHost(CultureInfo::CurrentCulture, CultureInfo::CurrentUICulture));
+        runspace->Open();
 
-        PSDataCollection<ErrorRecord ^> ^ error = _ps->Streams->Error;
-        EventHandler<DataAddedEventArgs ^> ^ eventHandler2 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Error_DataAdded);
-        error->DataAdded += eventHandler2;
+        auto powerShell = PowerShell::Create();
+        powerShell->Runspace = runspace;
 
-        PSDataCollection<ProgressRecord ^> ^ progress = _ps->Streams->Progress;
-        EventHandler<DataAddedEventArgs ^> ^ eventHandler3 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Progress_DataAdded);
-        progress->DataAdded += eventHandler3;
+        // Load custom PowerShell runtime extensions
+        String ^ initScript = R"(
+            Add-Type -Path 'PowerShellRuntimeExtensions20.dll';
+            function ConvertFrom-Json20([object] $inputObject) {
+                $err = $null;
+                return [PowerShellRuntimeExtensions.JsonObject]::ConvertFromJson($inputObject, $false, 4, [ref]$err);
+            }
+            function ConvertTo-Json20([object] $inputObject, $depth = 5) {
+                $ctx = New-Object PowerShellRuntimeExtensions.ConvertToJsonContext($depth, $false, $false, 'Default');
+                return [PowerShellRuntimeExtensions.JsonObject]::ConvertToJson($inputObject, [ref]$ctx);
+            }
+            if ($null -eq (Get-Command 'ConvertTo-Json20' -ErrorAction SilentlyContinue)) { 
+                New-Alias -Name 'ConvertTo-JSON' -Value 'ConvertTo-Json20' -Scope Global -Force;
+            }
+            if ($null -eq (Get-Command 'ConvertFrom-Json20' -ErrorAction SilentlyContinue)) { 
+                New-Alias -Name 'ConvertFrom-JSON' -Value 'ConvertFrom-Json20' -Scope Global -Force;
+            }
+        )";
 
-        PropertyInfo ^ property = _ps->GetType()->GetProperty("Information");
-        if (property != nullptr)
+        powerShell->AddScript(initScript);
+        powerShell->Invoke();
+
+        BindEvents(powerShell, runspace->SessionStateProxy->Host);
+
+        String ^ deserializedScript = DeserializeScriptVariables(script);
+
+        if (isInlinePowershell)
         {
-            Object ^ value = property->GetValue(_ps->Streams, nullptr);
-            EventInfo ^ eventInfo = value->GetType()->GetEvent("DataAdded");
-            MethodInfo ^ methodInfo = this->GetType()->GetMethod("Information_DataAdded", BindingFlags::Instance | BindingFlags::NonPublic);
-            Delegate ^ delegateInfo = Delegate::CreateDelegate(eventInfo->EventHandlerType, this, methodInfo);
-            eventInfo->AddEventHandler(value, delegateInfo);
+            powerShell->AddScript(deserializedScript, true);
         }
         else
         {
-            host->OnInformation += gcnew Action<String ^>(this, &PowershellExecutor::Host_OnInformation);
+            powerShell->AddCommand(deserializedScript);
         }
 
-        PSDataCollection<VerboseRecord ^> ^ verbose = _ps->Streams->Verbose;
-        EventHandler<DataAddedEventArgs ^> ^ eventHandler4 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Verbose_DataAdded);
-        verbose->DataAdded += eventHandler4;
+        auto psInvocationSettings = gcnew PSInvocationSettings();
+        psInvocationSettings->Host = runspace->SessionStateProxy->Host;
 
-        PSDataCollection<WarningRecord ^> ^ warning = _ps->Streams->Warning;
-        EventHandler<DataAddedEventArgs ^> ^ eventHandler5 = gcnew EventHandler<DataAddedEventArgs ^>(this, &PowershellExecutor::Warning_DataAdded);
-        warning->DataAdded += eventHandler5;
+        auto outputCollection = gcnew PSDataCollection<PSObject ^>();
+        powerShell->Invoke(nullptr, outputCollection, psInvocationSettings);
 
-        GC::KeepAlive(this);
+        if (outputCollection->Count == 0)
+        {
+            throw gcnew Exception("Activity did not return a result and/or failed while executing");
+        }
+        if (outputCollection->Count > 1)
+        {
+            throw gcnew Exception("Activity returned more than one result. See below for details");
+        }
+
+        result->Output = outputCollection[0]->ToString();
+        result->Success = true;
     }
     catch (Exception ^ ex)
     {
-        LogManagedException(ex, "BindEvents");
-    }
-}
-
-PowerShellExecutionResult *PowerShellExecutor::ExecutePowerShell(PowerShellExecutionResult *result, String ^ script, bool isInlinePowershell)
-{
-    PowerShellExecutionResult ^ powerShellExecutionResult = gcnew PowerShellExecutionResult();
-    try
-    {
-        LogUtil::LogInfo("PowerShellExecuteBegin", false);
-
-        Runspace ^ runspace = nullptr;
-        PowerShell ^ powerShell = nullptr;
-        PSObject ^ psObject = nullptr;
-        PSObject ^ psObject2 = nullptr;
-        PSDataCollection<Object ^> ^ psDataCollection = nullptr;
-        PSDataCollection<Object ^> ^ psDataCollection2 = nullptr;
-
-        try
-        {
-            ProcessUtil ^ processUtil = gcnew ProcessUtil();
-            SettingsService ^ settingsService = gcnew SettingsService();
-            bool isActivityNode = SettingsService::GetIsActivityNode(settingsService) != nullptr;
-
-            // OpenPowerShellRunspace
-            LogUtil::LogInfo("OpenPowerShellRunspace", false);
-            DefaultHost ^ defaultHost = gcnew DefaultHost(CultureInfo::CurrentCulture, CultureInfo::CurrentUICulture);
-            runspace = RunspaceFactory::CreateRunspace(defaultHost);
-            runspace->Open();
-            powerShell = PowerShell::Create();
-            powerShell->Runspace = runspace;
-            BindEvents(powerShell, defaultHost);
-
-            String ^ executablePath = ProcessUtil::GetExecutableDirectoryPath();
-            String ^ runtimeDllPath = Path::Combine(executablePath, "CB.PowerShellRuntimeExtensions20.dll");
-
-            // Load custom PowerShell runtime extensions
-            String ^ initScript = String::Format(R"(
-                Add-Type -Path '{0}'
-                function ConvertFrom-Json20([object] $inputObject) {{
-                    $err = $null
-                    return [CB.PowerShellRuntimeExtensions.JsonObject]::ConvertFromJson($inputObject, $false, 4, [ref]$err)
-                }}
-                function ConvertTo-Json20([object] $inputObject, $depth = 5) {{
-                    $ctx = New-Object CB.PowerShellRuntimeExtensions.ConvertToJsonContext($depth, $false, $false, 'Default')
-                    return [CB.PowerShellRuntimeExtensions.JsonObject]::ConvertToJson($inputObject, [ref]$ctx)
-                }}
-                if ((Get-Command 'ConvertTo-Json20' -ErrorAction SilentlyContinue) -eq $null) {{ New-Alias -Name 'ConvertTo-JSON' -Value 'ConvertTo-Json20' }}
-                if ((Get-Command 'ConvertFrom-Json20' -ErrorAction SilentlyContinue) -eq $null) {{ New-Alias -Name 'ConvertFrom-JSON' -Value 'ConvertFrom-Json20' }}
-            )",
-                                                 runtimeDllPath);
-
-            powerShell->AddScript(initScript);
-            powerShell->Invoke();
-
-            // Deserialize script variables (you'll need to implement this part)
-            String ^ deserializedScript = DeserializeScriptVariables(script);
-
-            powerShell->AddScript(deserializedScript, true);
-            PSInvocationSettings ^ psInvocationSettings = gcnew PSInvocationSettings();
-            psInvocationSettings->Host = defaultHost;
-            psDataCollection2 = gcnew PSDataCollection<Object ^>();
-            Collection<PSObject ^> ^ psOutput = powerShell->Invoke<Object ^>(nullptr, psDataCollection2, psInvocationSettings);
-
-            if (psDataCollection2->Count == 0 && (!isActivityNode || !isInlinePowershell))
-            {
-                throw gcnew Exception("Activity did not return a result and/or failed while executing");
-            }
-
-            if (psDataCollection2->Count > 1)
-            {
-                throw gcnew Exception("Activity returned more than one result. See below for details");
-            }
-
-            if (psDataCollection2->Count > 0)
-            {
-                psObject = gcnew PSObject();
-                Type ^ type = psDataCollection2[0]->GetType();
-                Type ^ type2 = psObject->GetType();
-                if (type != type2)
-                {
-                    throw gcnew Exception("Activity did not return valid result. Must return object.");
-                }
-                psObject2 = psDataCollection2[0];
-                String ^ outputText = psObject2->ToString();
-                std::string outputStr = marshal_as<std::string>(outputText);
-                result->Output = new char[outputStr.length() + 1];
-                strcpy_s(result->Output, outputStr.length() + 1, outputStr.c_str());
-            }
-
-            result->Success = true;
-        }
-        catch (Exception ^ ex)
-        {
-            result->Success = false;
-            std::string errorStr = marshal_as<std::string>(ex->ToString());
-            result->Output = new char[errorStr.length() + 1];
-            strcpy_s(result->Output, errorStr.length() + 1, errorStr.c_str());
-        }
-        finally
-        {
-            if (psDataCollection != nullptr)
-                psDataCollection->Dispose();
-            if (psDataCollection2 != nullptr)
-                psDataCollection2->Dispose();
-            if (runspace != nullptr)
-                runspace->Dispose();
-            if (powerShell != nullptr)
-                powerShell->Dispose();
-            if (psObject2 != nullptr && dynamic_cast<IDisposable ^>(psObject2) != nullptr)
-                safe_cast<IDisposable ^>(psObject2)->Dispose();
-            if (psObject != nullptr && dynamic_cast<IDisposable ^>(psObject) != nullptr)
-                safe_cast<IDisposable ^>(psObject)->Dispose();
-        }
-
-        GC::KeepAlive(this);
-    }
-    catch (Exception ^ ex)
-    {
-        // Handle any unexpected exceptions
         result->Success = false;
-        std::string errorStr = marshal_as<std::string>(ex->ToString());
-        result->Output = new char[errorStr.length() + 1];
-        strcpy_s(result->Output, errorStr.length() + 1, errorStr.c_str());
+        result->ErrorMessage = ex->ToString();
+        LogManagedException(ex, "ExecutePowerShell");
     }
 
     return result;
 }
 
-// Implement DeserializeScriptVariables method
-String ^ PowerShellExecutor::DeserializeScriptVariables(String ^ script)
+void PowerShellExecutor::LogManagedException(Exception ^ ex, String ^ context)
 {
-    // TODO: Implement your deserialization logic here
-    // This is a placeholder implementation
-    return script;
+    String ^ errorMessage = String::Format("Exception in {0}: {1}", context, ex->ToString());
+    SendLog(errorMessage, LogOutputType::Error);
 }
