@@ -1,0 +1,13 @@
+PowerShellStandard.Library
+System.Management.Automation
+Microsoft.PowerShell.SDK
+
+<PackageReference Include="Microsoft.PowerShell.SDK" Version="7.5.0-preview.3" />
+<PackageReference Include="Microsoft.PowerShell.5.1.ReferenceAssemblies" Version="1.0.0" />
+<PackageReference Include="PowerShellStandard.Library" Version="5.1.1" />
+<PackageReference Include="System.Management.Automation" Version="7.5.0-preview.3" />
+
+# Other assemblies to look out for...
+<PackageReference Include="Microsoft.PowerShell.CoreCLR.Eventing" Version="7.4.3" />
+<PackageReference Include="Microsoft.Management.Infrastructure" Version="3.0.0" />
+<PackageReference Include="Microsoft.PowerShell.Native" Version="7.4.0" />

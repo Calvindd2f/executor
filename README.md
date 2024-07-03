@@ -1,6 +1,12 @@
 ## Summary
 The `PowershellExecutor` class is designed to execute PowerShell scripts and handle various types of output logs such as verbose, warning, error, and information. It binds to PowerShell streams to capture and process these logs, sending them to a native logging function via P/Invoke. The class also includes mechanisms to handle activity log thresholds and specific error details, such as web exceptions.
 
+## Build
+
+`mkdir build`
+`cd build`
+`cmake ..`
+
 ## Example Usage
 ```csharp
 IntPtr callbacks = // obtain the callback pointer

@@ -9,6 +9,11 @@ class PowerShellExecutor;
 extern "C"
 {
 
+    /// @brief 
+    /// @param callbacks 
+    /// @param message 
+    /// @param logType 
+    /// @return 
     NATIVELIB_API void SendLog(Callbacks *callbacks, const char *message, int logType)
     {
         if (callbacks == nullptr || callbacks->LogCallback == nullptr || message == nullptr)

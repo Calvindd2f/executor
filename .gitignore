@@ -1,1 +1,4 @@
 kb_files/*
+build/*
+.vs/*
+out/*

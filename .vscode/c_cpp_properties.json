@@ -1,0 +1,63 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${vcpkgRoot}/x64-windows/include",
+                "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "windowsSdkVersion": "10.0.26100.0",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64",
+            "compilerArgs": [
+                "-clr"
+            ],
+            "browse": {
+                "path": [
+                    "C:\\Users\\c\\a1\\executor\\include",
+                    "C:\\vcpkg\\vcpkg\\buildtrees",
+                    "C:\\Program Files (x86)\\Microsoft SDKs",
+                    "C:\\Program Files (x86)\\Microsoft Visual Studio 14.0"
+                ]
+            }
+        },
+        {
+            "name": "great",
+            "includePath": [
+                "${env:INCLUDE}",
+                "${workspaceFolder}/**",
+                "${vcpkgRoot}/x64-windows/include",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio 14.0/VC",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.32.31326/atlmfc/include",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.30.30705/atlmfc/include",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.32.31326/atlmfc/include",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/x64/lib/clang/17/include",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/x64/lib/clang/17/include",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/lib/clang/17/include",
+                "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.40.33807/include",
+                "${env:ProgramFiles(x86)}/Windows Kits/NETFXSDK/4.8.1/Include",
+                "${env:ProgramFiles(x86)}/Windows Kits/NETFXSDK/4.8/Include/um",
+                "${env:ProgramFiles(x86)}/Windows Kits/10/Include",
+                "${env:ProgramFiles(x86)}/Windows Kits/10/Lib"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.24.28314/bin/Hostx64/x64/cl.exe",
+            "windowsSdkVersion": "10.0.26100.0",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "msvc-x64"
+        }
+    ],
+    "version": 4
+}

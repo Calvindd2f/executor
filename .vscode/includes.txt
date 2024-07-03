@@ -1,0 +1,11 @@
+'
+${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.30.30705/atlmfc/include
+${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.32.31326/atlmfc/include
+${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/x64/lib/clang/17/include
+${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/x64/lib/clang/17/include
+${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/lib/clang/17/include
+${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.40.33807/include
+${env:ProgramFiles(x86)}/Windows Kits/NETFXSDK/4.8.1/Include
+${env:ProgramFiles(x86)}/Windows Kits/NETFXSDK/4.8/Include/um
+${env:ProgramFiles(x86)}/Windows Kits/10/Include
+${env:ProgramFiles(x86)}/Windows Kits/10/Lib
