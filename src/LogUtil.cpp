@@ -3,7 +3,7 @@
 #include <vcclr.h>
 
 using namespace System::IO;
-using namespace System::Environment;
+//using namespace System::Environment;
 
 void LogUtil::LogInfo(String ^ shortMessage, String ^ detailDescription)
 {

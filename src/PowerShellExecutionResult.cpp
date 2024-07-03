@@ -1,5 +1,6 @@
 #include "PowerShellExecutionResult.h"
 #include <msclr/marshal.h>
+#include <string>
 
 using namespace msclr::interop;
 
