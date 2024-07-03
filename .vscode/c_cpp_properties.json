@@ -31,6 +31,7 @@
         {
             "name": "great",
             "includePath": [
+                "${env:INCLUDE}",
                 "${workspaceFolder}/**",
                 "${vcpkgRoot}/x64-windows/include",
                 "${env:ProgramFiles(x86)}/Microsoft Visual Studio 14.0/VC",
@@ -55,10 +56,7 @@
             "windowsSdkVersion": "10.0.26100.0",
             "cStandard": "c11",
             "cppStandard": "c++17",
-            "intelliSenseMode": "msvc-x64",
-            "compilerArgs": [
-                "-clr"
-            ]
+            "intelliSenseMode": "msvc-x64"
         }
     ],
     "version": 4
