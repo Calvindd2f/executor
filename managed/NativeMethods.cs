@@ -29,6 +29,3 @@ namespace PowerShellExecutorNamespace
         public static extern bool IsActivityNode();
     }
 }
-
-// Don't forget to free the memory when you're done:
-// Marshal.FreeHGlobal(callbacksPtr);
